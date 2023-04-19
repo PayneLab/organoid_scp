@@ -5,21 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "oscutils"
 version = "0.0.0"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "pandas>=1.4",
 ]
 
 [tool.setuptools.packages.find]
-namespaces = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-"oscutils.data" = [
-    "proteome_discoverer/Payne_Organoids_AnnotationProteinGroups.txt",
-    "proteome_discoverer/Payne_Organoids_PathwayProteinGroups.txt",
-    "proteome_discoverer/Payne_Organoids_ProteinGroups.txt",
-    "proteome_discoverer/Payne_Organoids_Proteins.txt",
-    "proteome_discoverer/Payne_Organoids_StudyInformation.txt",
-    "metamorpheus/Task1-SearchTask/AllQuantifiedProteinGroups.tsv",
+oscutils = [
+    "data/proteome_discoverer/Payne_Organoids_AnnotationProteinGroups.txt",
+    "data/proteome_discoverer/Payne_Organoids_PathwayProteinGroups.txt",
+    "data/proteome_discoverer/Payne_Organoids_ProteinGroups.txt",
+    "data/proteome_discoverer/Payne_Organoids_Proteins.txt",
+    "data/proteome_discoverer/Payne_Organoids_StudyInformation.txt",
+    "data/metamorpheus/Task1-SearchTask/AllQuantifiedProteinGroups.tsv",
 ]
