@@ -15,10 +15,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 oscutils = [
+    "data/metamorpheus/Task1-SearchTask/AllQuantifiedProteinGroups.tsv",
     "data/proteome_discoverer/Payne_Organoids_AnnotationProteinGroups.txt",
     "data/proteome_discoverer/Payne_Organoids_PathwayProteinGroups.txt",
     "data/proteome_discoverer/Payne_Organoids_ProteinGroups.txt",
     "data/proteome_discoverer/Payne_Organoids_Proteins.txt",
     "data/proteome_discoverer/Payne_Organoids_StudyInformation.txt",
-    "data/metamorpheus/Task1-SearchTask/AllQuantifiedProteinGroups.tsv",
 ]
