@@ -9,6 +9,6 @@ build/
 *.icloud
 options.numbers
 
-data/metamorpheus/Task1-SearchTask/Individual\ File\ Results
-data/metamorpheus/Task1-SearchTask/AllPSMs.psmtsv
-data/proteome_discoverer/Payne_Organoids_MSMSSpectrumInfo.txt
+Individual\ File\ Results/
+AllPSMs.psmtsv
+Payne_Organoids_MSMSSpectrumInfo.txt
