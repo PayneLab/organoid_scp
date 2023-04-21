@@ -1,3 +1,3 @@
 from .load_data import (
-    load_table,
+    load_protein_table,
 )
