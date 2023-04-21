@@ -3,6 +3,7 @@ import pandas as pd
 
 def load_protein_table(
     source: str,
+    clean: bool = True,
 ) -> pd.DataFrame:
     """
     Load the protein abundances from a protein table with the original
@@ -13,6 +14,8 @@ def load_protein_table(
     source : {"pd", "mm"}
         Which tool you want the protein abundance data from. "pd" for
         Proteome Discoverer, "mm" for MetaMorpheus.
+    clean : bool, default True
+        Whether to drop contaminated and no protein samples from the table.
 
     Returns
     -------
@@ -29,6 +32,11 @@ def load_protein_table(
         df = df[df.columns[df.columns.str.startswith("Intensity_")]] # Select just the protein abundance columns
 
         df.columns = df.columns.to_series().str.split("_", n=1, expand=True)[1].values # Cut off "Intensity_" from column names
+
+        # Zero-pad the sample numbers
+        cols_split = df.columns.to_series().str.rsplit("_", n=1, expand=True)
+        df.columns = cols_split[0] + "_" + cols_split[1].map("{:0>2}".format)
+
         df.columns.name = "sample"
         df.index.name = "protein"
 
@@ -39,7 +47,7 @@ def load_protein_table(
         # Cut the ".raw" off the end of the filenames, and generate a "sample" column for joining with protein table
         ed = ed.assign(
             FileName=ed["FileName"].str.rsplit(".", n=1, expand=True)[0],
-            sample=ed["Condition"] + "_" + ed["Biorep"].astype(str),
+            sample=ed["Condition"] + "_" + ed["Biorep"].map("{:0>2}".format),
         )
 
         # Mark the "bad" and "np" (no protein) samples
@@ -64,6 +72,10 @@ def load_protein_table(
         # Also has GO annotations and Reactome and WikiPathways pathways
         # Are all of these Master proteins for protein groups? And if so, is this table equivalent to groups tables?
         df = oscutils._load_original_table("pd", "Proteins")
+
+    if clean:
+        df = df[~df["bad"] & ~df["np"]]
+        df = df.drop(columns=["bad", "np"])
 
     return df
 
