@@ -3,5 +3,5 @@ from .load_data import (
 )
 
 from .make_plots import (
-    make_proteins_found_plot,
+    make_proteins_counts_plot,
 )

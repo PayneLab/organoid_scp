@@ -3,6 +3,7 @@ import pandas as pd
 
 def load_protein_table(
     source: str,
+    quant_or_found: str,
     clean: bool = True,
 ) -> pd.DataFrame:
     """
@@ -14,6 +15,9 @@ def load_protein_table(
     source : {"pd", "mm"}
         Which tool you want the protein abundance data from. "pd" for
         Proteome Discoverer, "mm" for MetaMorpheus.
+    quant_or_found : {"quant", "found"}
+        Whether to return "proteins quantified" or just "proteins found"
+        data.
     clean : bool, default True
         Whether to drop contaminated and no protein samples from the table.
 
@@ -22,8 +26,15 @@ def load_protein_table(
     pd.DataFrame
         The formatted protein abundance table.
     """
+    if source not in ["mm", "pd"]:
+        raise ValueError(f"Invalid argument '{source}' for source parameter.")
+    if quant_or_found not in ["quant", "found"]:
+        raise ValueError(f"Invalid argument '{quant_or_found}' for quant_or_found parameter.")
 
     if source == "mm":
+
+        if quant_or_found == "found":
+            raise ValueError("'found' data not available from MetaMorpheus.")
 
         df = _load_original_table("mm", "AllQuantifiedProteinGroups") # Load protein table
         ed = _load_original_table("mm", "ExperimentalDesign") # Load experimental design table

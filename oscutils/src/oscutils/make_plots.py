@@ -3,8 +3,9 @@ import numpy as np
 
 from .load_data import load_protein_table
 
-def make_proteins_found_plot(
+def make_proteins_counts_plot(
     source: str,
+    quant_or_found: str,
     clean: bool,
 ) -> alt.Chart:
     
@@ -13,7 +14,7 @@ def make_proteins_found_plot(
     else:
         index_cols = ["sample", "bad", "np"]
     
-    df = load_protein_table(source=source, clean=clean).\
+    df = load_protein_table(source=source, quant_or_found=quant_or_found, clean=clean).\
     set_index(index_cols).\
     notna().\
     sum(axis=1).\
