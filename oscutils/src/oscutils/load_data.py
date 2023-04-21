@@ -82,10 +82,62 @@ def load_protein_table(
         # Check Contaminant=True?
         # Also has GO annotations and Reactome and WikiPathways pathways
         # Are all of these Master proteins for protein groups? And if so, is this table equivalent to groups tables?
-        df = oscutils._load_original_table("pd", "Proteins")
+        df = _load_original_table("pd", "Proteins") # Load protein table
+        si = _load_original_table("pd", "StudyInformation") # Load study information table
+        mm_ed = _load_original_table("mm", "ExperimentalDesign") # Load MetaMorpheus experimental design table so we can get same sample numbers
+
+        df = df.set_index("Accession") # Index by protein accession
+
+        if quant_or_found == "quant":
+            df = df[df.columns[df.columns.str.startswith("Abundances Scaled F")]]
+            df.columns = df.columns.to_series().str.extract(r"Abundances Scaled (F\d+) Sample")[0].values
+        elif quant_or_found == "found":
+            df = df[df.columns[df.columns.str.startswith("Found in Sample F")]]
+            df.columns = df.columns.to_series().str.extract(r"Found in Sample (F\d+) Sample")[0].values
+            
+        df.columns.name = "File ID"
+        df.index.name = "protein"
+
+        df = df.\
+        transpose().\
+        reset_index(drop=False)
+
+        si = si.assign(FileName=si["File Name"].str.rsplit(".", n=1, expand=True)[0].str.rsplit("\\", n=1, expand=True)[1])
+        si = si[["File ID", "FileName"]]
+
+        # Cut the ".raw" off the end of the filenames, and generate a "sample" column for joining with protein table
+        mm_ed = mm_ed.assign(
+            FileName=mm_ed["FileName"].str.rsplit(".", n=1, expand=True)[0],
+            sample=mm_ed["Condition"] + "_" + mm_ed["Biorep"].map("{:0>2}".format),
+        )
+
+        # Mark the "bad" and "np" (no protein) samples
+        mm_ed = mm_ed.assign(
+            bad=mm_ed["FileName"].str.endswith("bad"),
+            np=mm_ed["FileName"].str.endswith("np"),
+        )
+
+        # Select only the needed columns
+        mm_ed = mm_ed[["sample", "FileName", "bad", "np"]]
+
+        si = si.merge(
+            right=mm_ed,
+            on="FileName",
+            how="outer",
+        )
+
+        si = si[["File ID", "sample", "bad", "np"]]
+
+        df = si.\
+        merge(
+            right=df,
+            on="File ID",
+            how="outer",
+        ).\
+        drop(columns="File ID")
 
     if clean:
-        df = df[~df["bad"] & ~df["np"]]
+        df = df[~df["bad"] & ~df["np"] & ~df["sample"].str.startswith("qc_")]
         df = df.drop(columns=["bad", "np"])
 
     return df
