@@ -1,3 +1,4 @@
+import numpy as np
 import os
 import pandas as pd
 
@@ -207,5 +208,56 @@ def _load_original_table(
         df = pd.read_csv(file_path, sep="\t", usecols=range(136))
     else:
         df = pd.read_csv(file_path, sep="\t")
+
+    return df
+
+def _get_proteins_found_count(
+    source: str,
+    quant_or_found: str,
+    clean: bool,
+) -> pd.DataFrame:
+ 
+    if source == "both":
+
+        df_mm = _get_proteins_found_count(source="mm", quant_or_found=quant_or_found, clean=clean).\
+        assign(software="mm")
+
+        df_pd = _get_proteins_found_count(source="pd", quant_or_found=quant_or_found, clean=clean).\
+        assign(software="pd")
+
+        df = pd.concat(
+            objs=[df_mm, df_pd],
+            axis="index",
+            join="outer",
+            ignore_index=True,
+        )
+
+    else:
+
+        if clean:
+            index_cols = ["sample"]
+        else:
+            index_cols = ["sample", "bad", "np"]
+
+        df = load_protein_table(source=source, quant_or_found=quant_or_found, clean=clean).\
+        set_index(index_cols).\
+        notna().\
+        sum(axis=1).\
+        sort_values().\
+        to_frame().\
+        reset_index().\
+        rename(columns={0: "quant_proteins_count"})
+
+        sample_split = df["sample"].str.split("_", expand=True, regex=False)
+        df = df.assign(
+            sample_type=sample_split[0],
+            sample_condition=sample_split[1].replace(to_replace=r"^0[12]$", value=np.nan, regex=True) # Replace ID numbers from blanks with NaN
+        )
+
+        if not clean:
+            df = df.assign(status=np.where(df["bad"] & ~df["np"], "Contaminated", "Normal"))
+            df = df.assign(status=np.where(df["np"] & ~df["bad"], "No protein", df["status"]))
+            df = df.assign(status=np.where(df["np"] & df["bad"], "Contaminated, No protein", df["status"]))
+            df = df.drop(columns=["bad", "np"])
 
     return df
