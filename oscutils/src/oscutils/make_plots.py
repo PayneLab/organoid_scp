@@ -9,6 +9,31 @@ def make_proteins_counts_plot(
     quant_or_found: str,
     clean: bool,
 ) -> alt.Chart:
+    """
+    Generate a plot showing the count of proteins found for each sample,
+    including results for both the MetaMorpheus and the Proteome Discoverer
+    data.
+
+    Parameters
+    ----------
+    quant_or_found : {"quant", "found"}
+        Whether to use "proteins quantified" or just "proteins found" data.
+        Currently only works with "quant", as "proteins found" data isn't
+        available from MetaMorpheus.
+    clean : bool
+        Whether to drop contaminated and no protein samples from the table.
+        If they are not dropped, bars are colored based on whether the
+        sample was normal, contaminated, or no protein. If they are
+        dropped, bars are colored based on the sample type (healthy or
+        unhealthy HFL1 cell, healthy or unhealthy psuedo-bulk, healthy or
+        unhealthy HFL1 boost, or blank).
+
+    Returns
+    -------
+    alt.Chart
+        A faceted bar chart showing the protein counts from each software
+        tool for each sample.
+    """
 
     df = _get_proteins_found_count(source="both", quant_or_found=quant_or_found, clean=clean)
 

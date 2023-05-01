@@ -216,6 +216,26 @@ def _get_proteins_found_count(
     quant_or_found: str,
     clean: bool,
 ) -> pd.DataFrame:
+    """
+    Get the number of proteins found for each sample.
+
+    Parameters
+    ----------
+    source : {"both", "pd", "mm"}
+        Which tool you want to use protein abundance data from. "pd" for
+        Proteome Discoverer, "mm" for MetaMorpheus, "both" for both.
+    quant_or_found : {"quant", "found"}
+        Whether to use "proteins quantified" or just "proteins found" data.
+        "found" is only available from Proteome Discoverer, so do not use
+        "found" with the "mm" or "both" source options.
+    clean : bool
+        Whether to drop contaminated and no protein samples from the table.
+
+    Returns
+    -------
+    pd.DataFrame
+        The counts of proteins found for each sample.
+    """
  
     if source == "both":
 
