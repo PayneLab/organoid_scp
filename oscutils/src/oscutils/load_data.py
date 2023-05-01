@@ -20,18 +20,21 @@ def load_protein_table(
         Whether to return "proteins quantified" or just "proteins found"
         data.
     clean : bool, default True
-        Whether to drop contaminated and no protein samples from the table.
+        Whether to drop contaminated, no protein, QC, and blank samples from the table.
 
     Returns
     -------
     pd.DataFrame
         The formatted protein abundance table.
     """
+
+    # Validate arguments
     if source not in ["mm", "pd"]:
         raise ValueError(f"Invalid argument '{source}' for source parameter.")
     if quant_or_found not in ["quant", "found"]:
         raise ValueError(f"Invalid argument '{quant_or_found}' for quant_or_found parameter.")
 
+    # Load and format tables
     if source == "mm":
 
         if quant_or_found == "found":
@@ -49,6 +52,7 @@ def load_protein_table(
         cols_split = df.columns.to_series().str.rsplit("_", n=1, expand=True)
         df.columns = cols_split[0] + "_" + cols_split[1].map("{:0>2}".format)
 
+        # Standardize axis names
         df.columns.name = "sample"
         df.index.name = "protein"
 
@@ -62,14 +66,14 @@ def load_protein_table(
             sample=ed["Condition"] + "_" + ed["Biorep"].map("{:0>2}".format),
         )
 
-        # Mark the "bad" and "np" (no protein) samples
+        # Mark the contaminated and no protein samples
         ed = ed.assign(
-            bad=ed["FileName"].str.endswith("bad"),
-            np=ed["FileName"].str.endswith("np"),
+            contaminated=ed["FileName"].str.endswith("bad"),
+            no_protein=ed["FileName"].str.endswith("np"),
         )
 
         # Select only the needed columns
-        ed = ed[["sample", "bad", "np"]]
+        ed = ed[["sample", "contaminated", "no_protein"]]
 
         # Join into protein table
         df = ed.merge(
@@ -89,13 +93,15 @@ def load_protein_table(
 
         df = df.set_index("Accession") # Index by protein accession
 
+        # Get either the protein quantification or the protein found columns
         if quant_or_found == "quant":
             df = df[df.columns[df.columns.str.startswith("Abundances Scaled F")]]
             df.columns = df.columns.to_series().str.extract(r"Abundances Scaled (F\d+) Sample")[0].values
         elif quant_or_found == "found":
             df = df[df.columns[df.columns.str.startswith("Found in Sample F")]]
             df.columns = df.columns.to_series().str.extract(r"Found in Sample (F\d+) Sample")[0].values
-            
+
+        # Get axes names ready for joining
         df.columns.name = "File ID"
         df.index.name = "protein"
 
@@ -103,6 +109,7 @@ def load_protein_table(
         transpose().\
         reset_index(drop=False)
 
+        # Get just the file names from the full file paths in the study information table
         si = si.assign(FileName=si["File Name"].str.rsplit(".", n=1, expand=True)[0].str.rsplit("\\", n=1, expand=True)[1])
         si = si[["File ID", "FileName"]]
 
@@ -112,23 +119,27 @@ def load_protein_table(
             sample=mm_ed["Condition"] + "_" + mm_ed["Biorep"].map("{:0>2}".format),
         )
 
-        # Mark the "bad" and "np" (no protein) samples
+        # Mark the contaminated and no protein samples
         mm_ed = mm_ed.assign(
-            bad=mm_ed["FileName"].str.endswith("bad"),
-            np=mm_ed["FileName"].str.endswith("np"),
+            contaminated=mm_ed["FileName"].str.endswith("bad"),
+            no_protein=mm_ed["FileName"].str.endswith("np"),
         )
 
         # Select only the needed columns
-        mm_ed = mm_ed[["sample", "FileName", "bad", "np"]]
+        mm_ed = mm_ed[["sample", "FileName", "contaminated", "no_protein"]]
 
+        # Merge the study information table with the experimental design table from MetaMorpheus so we can get the same sample numbers
+        # We join based off of the original file name, which had the well plate number and coordinates of the sample
         si = si.merge(
             right=mm_ed,
             on="FileName",
             how="outer",
         )
 
-        si = si[["File ID", "sample", "bad", "np"]]
+        # Get just the columns we want after the join
+        si = si[["File ID", "sample", "contaminated", "no_protein"]]
 
+        # Join with the protein table
         df = si.\
         merge(
             right=df,
@@ -137,9 +148,26 @@ def load_protein_table(
         ).\
         drop(columns="File ID")
 
+
+    # Split out the sample type, condition, and number from the sample column into separate columns
+    sample_split = df["sample"].str.split("_", expand=True, regex=False)
+    sample_rsplit = df["sample"].str.rsplit("_", n=1, expand=True)
+
+    df = df.assign(
+        sample_type=sample_split[0],
+        sample_condition=sample_split[1].replace(to_replace=r"^0\d$", value=np.nan, regex=True), # Replace ID numbers from blanks with NaN
+        sample_num=sample_rsplit[1].astype(int),
+    )
+
+    # Move all the metadata columns to the beginning of the table
+    df = df.\
+    set_index(["sample", "sample_type", "sample_condition", "sample_num", "contaminated", "no_protein"]).\
+    reset_index()
+
+    # Drop contaminated, no protein, blank, and QC samples if requested
     if clean:
-        df = df[~df["bad"] & ~df["np"] & ~df["sample"].str.startswith("qc_")]
-        df = df.drop(columns=["bad", "np"])
+        df = df[~df["contaminated"] & ~df["no_protein"] & ~df["sample"].str.startswith("qc_") & ~df["sample"].str.startswith("blank_")]
+        df = df.drop(columns=["contaminated", "no_protein"])
 
     return df
 
@@ -176,6 +204,7 @@ def _load_original_table(
     path_here = os.path.abspath(os.path.dirname(__file__))
     data_path = os.path.join(path_here, "data")
 
+    # Validate and process arguments
     if source == "mm":
         data_path = os.path.join(data_path, "metamorpheus", "Task1-SearchTask")
         if name in [
@@ -236,7 +265,10 @@ def _get_proteins_found_count(
     pd.DataFrame
         The counts of proteins found for each sample.
     """
- 
+
+    # If data from both MetaMorpheus and Proteome Discoverer are requested, recursively call this
+    # function to get the individual tables, add a column to specify which tool each count came
+    # from, and concatenate the tables
     if source == "both":
 
         df_mm = _get_proteins_found_count(source="mm", quant_or_found=quant_or_found, clean=clean).\
@@ -254,11 +286,11 @@ def _get_proteins_found_count(
 
     else:
 
-        if clean:
-            index_cols = ["sample"]
-        else:
-            index_cols = ["sample", "bad", "np"]
+        index_cols = ["sample", "sample_type", "sample_condition", "sample_num"]
+        if not clean:
+            index_cols += ["contaminated", "no_protein"]
 
+        # Get the count of proteins found for each sample
         df = load_protein_table(source=source, quant_or_found=quant_or_found, clean=clean).\
         set_index(index_cols).\
         notna().\
@@ -268,16 +300,13 @@ def _get_proteins_found_count(
         reset_index().\
         rename(columns={0: "quant_proteins_count"})
 
-        sample_split = df["sample"].str.split("_", expand=True, regex=False)
-        df = df.assign(
-            sample_type=sample_split[0],
-            sample_condition=sample_split[1].replace(to_replace=r"^0[12]$", value=np.nan, regex=True) # Replace ID numbers from blanks with NaN
-        )
-
+        # Replace the "contaminated" and "no_protein" tables with a single column called "status" that has
+        # a value of either "Normal", "Contaminated", "No Protein", or "Contaminated, No protein" for each
+        # sample
         if not clean:
-            df = df.assign(status=np.where(df["bad"] & ~df["np"], "Contaminated", "Normal"))
-            df = df.assign(status=np.where(df["np"] & ~df["bad"], "No protein", df["status"]))
-            df = df.assign(status=np.where(df["np"] & df["bad"], "Contaminated, No protein", df["status"]))
-            df = df.drop(columns=["bad", "np"])
+            df = df.assign(status=np.where(df["contaminated"] & ~df["no_protein"], "Contaminated", "Normal"))
+            df = df.assign(status=np.where(df["no_protein"] & ~df["contaminated"], "No protein", df["status"]))
+            df = df.assign(status=np.where(df["no_protein"] & df["contaminated"], "Contaminated, No protein", df["status"]))
+            df = df.drop(columns=["contaminated", "no_protein"])
 
     return df

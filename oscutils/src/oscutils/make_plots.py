@@ -38,6 +38,8 @@ def make_proteins_counts_plot(
     df = _get_proteins_found_count(source="both", quant_or_found=quant_or_found, clean=clean)
 
     if clean:
+
+        # Join the "sample_type" and "sample_condition" columns into a single column by which we'll color code the bars
         df = df.assign(
             sample_type_condition=(df["sample_type"] + "_" + df["sample_condition"].fillna("")).str.replace(r"_$", "", regex=True),
         )
@@ -59,10 +61,12 @@ def make_proteins_counts_plot(
     )    
 
     if clean:
+        # Color the bars based on the "sample_type_condition" column we made
         chart = chart.encode(
             color="sample_type_condition",
         )
     else:
+        # Color code the bars based on whether the sample is normal, contaminated, or no protein
         chart = chart.encode(
             color=alt.Color(
                 "status",
@@ -73,6 +77,7 @@ def make_proteins_counts_plot(
             ),
         )
 
+    # Break the chart into individual facets for each sample
     chart = chart.facet(
         facet=alt.Facet(
             "sample",
