@@ -83,15 +83,15 @@ def load_protein_table(
         )
 
     elif source == "pd":
-        # Has both scaled abundance and found/not found columns--extract out separately
-        # Check Contaminant=True?
-        # Also has GO annotations and Reactome and WikiPathways pathways
-        # Are all of these Master proteins for protein groups? And if so, is this table equivalent to groups tables?
+
         df = _load_original_table("pd", "Proteins") # Load protein table
         si = _load_original_table("pd", "StudyInformation") # Load study information table
         mm_ed = _load_original_table("mm", "ExperimentalDesign") # Load MetaMorpheus experimental design table so we can get same sample numbers
 
         df = df.set_index("Accession") # Index by protein accession
+
+        # Select only rows with q <= 0.01 and Contaminant=False
+        df = df[~df["Contaminant"] & (df["Exp q-value Combined"] <= 0.01)]
 
         # Get either the protein quantification or the protein found columns
         if quant_or_found == "quant":
@@ -162,12 +162,14 @@ def load_protein_table(
     # Move all the metadata columns to the beginning of the table
     df = df.\
     set_index(["sample", "sample_type", "sample_condition", "sample_num", "contaminated", "no_protein"]).\
-    reset_index()
+    reset_index(drop=False)
 
     # Drop contaminated, no protein, blank, and QC samples if requested
     if clean:
         df = df[~df["contaminated"] & ~df["no_protein"] & ~df["sample"].str.startswith("qc_") & ~df["sample"].str.startswith("blank_")]
-        df = df.drop(columns=["contaminated", "no_protein"])
+        df = df.\
+        drop(columns=["contaminated", "no_protein"]).\
+        reset_index(drop=True)
 
     return df
 
