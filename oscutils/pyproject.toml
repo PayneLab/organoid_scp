@@ -7,7 +7,12 @@ name = "oscutils"
 version = "0.0.0"
 requires-python = ">=3.10"
 dependencies = [
+    "altair==4.2.2",
+    "altair-data-server>=0.4.1",
+    "altair-saver>=0.5.0",
     "pandas>=1.4",
+    "scipy>=1.10.1",
+    "statsmodels>=0.14.0",
 ]
 
 [tool.setuptools.packages.find]
