@@ -19,11 +19,14 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 oscutils = [
-    "data/metamorpheus/Task1-SearchTask/AllQuantifiedProteinGroups.tsv",
-    "data/metamorpheus/Task1-SearchTask/ExperimentalDesign.tsv",
-    "data/proteome_discoverer/Payne_Organoids_AnnotationProteinGroups.txt",
-    "data/proteome_discoverer/Payne_Organoids_PathwayProteinGroups.txt",
-    "data/proteome_discoverer/Payne_Organoids_ProteinGroups.txt",
-    "data/proteome_discoverer/Payne_Organoids_Proteins.txt",
-    "data/proteome_discoverer/Payne_Organoids_StudyInformation.txt",
+    "data/metamorpheus/run20230411/Task1-SearchTask/AllQuantifiedProteinGroups.tsv",
+    "data/metamorpheus/run20230411/Task1-SearchTask/ExperimentalDesign.tsv",
+    "data/metamorpheus/run20230508/Task1-SearchTask/AllQuantifiedProteinGroups.tsv",
+    "data/metamorpheus/run20230508/Task1-SearchTask/ExperimentalDesign.tsv",
+    "data/proteome_discoverer/run20230410/Payne_Organoids_InputFiles.txt",
+    "data/proteome_discoverer/run20230410/Payne_Organoids_PeptideGroups.txt",
+    "data/proteome_discoverer/run20230410/Payne_Organoids_Proteins.txt",
+    "data/proteome_discoverer/run20230809/Payne_organoids2.0_InputFiles.txt",
+    "data/proteome_discoverer/run20230809/Payne_organoids2.0_PeptideGroups.txt",
+    "data/proteome_discoverer/run20230809/Payne_organoids2.0_Proteins.txt",
 ]

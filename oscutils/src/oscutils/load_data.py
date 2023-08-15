@@ -6,6 +6,7 @@ def load_protein_table(
     source: str,
     quant_or_found: str,
     clean: bool = True,
+    load_old: bool = False,
 ) -> pd.DataFrame:
     """
     Load the protein abundances from a protein table with the original
@@ -21,6 +22,8 @@ def load_protein_table(
         data.
     clean : bool, default True
         Whether to drop contaminated, no protein, QC, and blank samples from the table.
+    load_old: bool, default False
+        Whether to load the data from the old run instead of the most recent one.
 
     Returns
     -------
@@ -40,8 +43,8 @@ def load_protein_table(
         if quant_or_found == "found":
             raise ValueError("'found' data not available from MetaMorpheus.")
 
-        df = _load_original_table("mm", "AllQuantifiedProteinGroups") # Load protein table
-        ed = _load_original_table("mm", "ExperimentalDesign") # Load experimental design table
+        df = _load_original_table("mm", "AllQuantifiedProteinGroups", load_old=load_old) # Load protein table
+        ed = _load_original_table("mm", "ExperimentalDesign", load_old=load_old) # Load experimental design table
 
         df = df.set_index("Protein Accession") # Index by protein accession
         df = df[df.columns[df.columns.str.startswith("Intensity_")]] # Select just the protein abundance columns
@@ -73,7 +76,7 @@ def load_protein_table(
         )
 
         # Select only the needed columns
-        ed = ed[["sample", "contaminated", "no_protein"]]
+        ed = ed[["sample", "FileName", "contaminated", "no_protein"]]
 
         # Join into protein table
         df = ed.merge(
@@ -84,22 +87,38 @@ def load_protein_table(
 
     elif source == "pd":
 
-        df = _load_original_table("pd", "Proteins") # Load protein table
-        si = _load_original_table("pd", "StudyInformation") # Load study information table
-        mm_ed = _load_original_table("mm", "ExperimentalDesign") # Load MetaMorpheus experimental design table so we can get same sample numbers
+        df = _load_original_table("pd", "Proteins", load_old=load_old) # Load protein table
+        inpf = _load_original_table("pd", "InputFiles", load_old=load_old) # Load study information table
+        mm_ed = _load_original_table("mm", "ExperimentalDesign", load_old=True) # Load MetaMorpheus experimental design table so we can get same sample numbers. Note that we always load the old one because the new one doesn't have all of the sample numbers.
 
         df = df.set_index("Accession") # Index by protein accession
 
         # Select only rows with q <= 0.01 and Contaminant=False
-        df = df[~df["Contaminant"] & (df["Exp q-value Combined"] <= 0.01)]
+        if load_old:
+            qval_col = "Exp q-value Combined"
+        else:
+            qval_col = "Exp. q-value: Combined"
+
+        df = df[~df["Contaminant"] & (df[qval_col] <= 0.01)]
 
         # Get either the protein quantification or the protein found columns
+        if load_old:
+            quant_startswith = "Abundances Scaled F"
+            quant_extract = r"Abundances Scaled (F\d+) Sample"
+            found_startswith = "Found in Sample F"
+            found_extract = r"Found in Sample (F\d+) Sample"
+        else:
+            quant_startswith = "Abundance: F"
+            quant_extract = r"Abundance: (F\d+): Sample"
+            found_startswith = "Found in Sample: F"
+            found_extract = r"Found in Sample: (F\d+): Sample"
+
         if quant_or_found == "quant":
-            df = df[df.columns[df.columns.str.startswith("Abundances Scaled F")]]
-            df.columns = df.columns.to_series().str.extract(r"Abundances Scaled (F\d+) Sample")[0].values
+            df = df[df.columns[df.columns.str.startswith(quant_startswith)]]
+            df.columns = df.columns.to_series().str.extract(quant_extract)[0].values
         elif quant_or_found == "found":
-            df = df[df.columns[df.columns.str.startswith("Found in Sample F")]]
-            df.columns = df.columns.to_series().str.extract(r"Found in Sample (F\d+) Sample")[0].values
+            df = df[df.columns[df.columns.str.startswith(found_startswith)]]
+            df.columns = df.columns.to_series().str.extract(found_extract)[0].values
 
         # Get axes names ready for joining
         df.columns.name = "File ID"
@@ -110,8 +129,8 @@ def load_protein_table(
         reset_index(drop=False)
 
         # Get just the file names from the full file paths in the study information table
-        si = si.assign(FileName=si["File Name"].str.rsplit(".", n=1, expand=True)[0].str.rsplit("\\", n=1, expand=True)[1])
-        si = si[["File ID", "FileName"]]
+        inpf = inpf.assign(FileName=inpf["File Name"].str.rsplit(".", n=1, expand=True)[0].str.rsplit("\\", n=1, expand=True)[1])
+        inpf = inpf[["File ID", "FileName"]]
 
         # Cut the ".raw" off the end of the filenames, and generate a "sample" column for joining with protein table
         mm_ed = mm_ed.assign(
@@ -130,17 +149,17 @@ def load_protein_table(
 
         # Merge the study information table with the experimental design table from MetaMorpheus so we can get the same sample numbers
         # We join based off of the original file name, which had the well plate number and coordinates of the sample
-        si = si.merge(
+        inpf = inpf.merge(
             right=mm_ed,
             on="FileName",
-            how="outer",
+            how="left",
         )
 
         # Get just the columns we want after the join
-        si = si[["File ID", "sample", "contaminated", "no_protein"]]
+        inpf = inpf[["File ID", "FileName", "sample", "contaminated", "no_protein"]]
 
         # Join with the protein table
-        df = si.\
+        df = inpf.\
         merge(
             right=df,
             on="File ID",
@@ -149,15 +168,22 @@ def load_protein_table(
         drop(columns="File ID")
 
 
-    # Split out the sample type, condition, and number from the sample column into separate columns
-    sample_split = df["sample"].str.split("_", expand=True, regex=False)
+    # Split out the sample type, condition, and number from the metadata columns into separate columns
+    filename_split = df["FileName"].str.replace("_2_", "_").str.split("_", expand=True, regex=False)
     sample_rsplit = df["sample"].str.rsplit("_", n=1, expand=True)
 
+    # Since the blank and QC samples aren't "healthy" or "unhealthy", mark
+    # sample condition as NaN for them (see where this variable is used in the
+    # assign statement below).
+    conditions_to_replace = filename_split[1][~filename_split[1].isin(["Healthy", "Unhealthy"])].unique()
+
+    # Create metadata columns
     df = df.assign(
-        sample_type=sample_split[0],
-        sample_condition=sample_split[1].replace(to_replace=r"^0\d$", value=np.nan, regex=True), # Replace ID numbers from blanks with NaN
+        sample_type=filename_split[0].replace(to_replace="Psuedo-bulk", value="pbulk").replace("HFL1boost", "boost").replace("HFL1SC", "hfl1").str.lower(),
+        #sample_type=filename_split[0].replace(to_replace="Psuedo-bulk", value="pbulk").str.lower(), # TODO: replace above with this after check changes work
+        sample_condition=filename_split[1].replace(to_replace=conditions_to_replace, value=np.nan).str.lower(),
         sample_num=sample_rsplit[1].astype(int),
-    )
+    ).drop(columns="FileName") # TODO: Keep this after refactor check
 
     # Move all the metadata columns to the beginning of the table
     df = df.\
@@ -176,6 +202,7 @@ def load_protein_table(
 def _load_original_table(
     source: str,
     name: str,
+    load_old: bool,
 ) -> pd.DataFrame:
     """
     Load one of the data tables without any additional formatting.
@@ -192,11 +219,13 @@ def _load_original_table(
         "PathwayProteinGroups",
         "ProteinGroups",
         "Proteins",
-        "StudyInformation",
+        "InputFiles",
     }
         The name of the table you want. "AllQuantifiedProteinGroups" is the
         only option for MetaMorpheus; the rest are from Proteome
         Discoverer.
+    load_old: bool, default False
+        Whether to load the data from the old run instead of the most recent one.
 
     Returns
     -------
@@ -208,7 +237,15 @@ def _load_original_table(
 
     # Validate and process arguments
     if source == "mm":
-        data_path = os.path.join(data_path, "metamorpheus", "Task1-SearchTask")
+
+        if load_old:
+            run_dir = "run20230411"
+            usecols_rng = range(136)
+        else:
+            run_dir = "run20230508"
+            usecols_rng = range(105)
+        
+        data_path = os.path.join(data_path, "metamorpheus", run_dir, "Task1-SearchTask")
         if name in [
             "AllQuantifiedProteinGroups",
             "ExperimentalDesign",
@@ -217,28 +254,36 @@ def _load_original_table(
         else:
             raise ValueError(f"Invalid argument '{name}' for name parameter with '{source}' as source.")
     elif source == "pd":
-        data_path = os.path.join(data_path, "proteome_discoverer")
+
+        if load_old:
+            run_dir = "run20230410"
+            filename = f"Payne_Organoids_{name}.txt"
+        else:
+            run_dir = "run20230809"
+            filename = f"Payne_organoids2.0_{name}.txt"
+        
+        data_path = os.path.join(data_path, "proteome_discoverer", run_dir)
         if name in [
             "AnnotationProteinGroups", # Coverage numbers and percentages for GO annotations
             "PathwayProteinGroups", # Coverage numbers and percentages for Reactome and WikiPathways pathways
             "ProteinGroups", # Coverage for protein groups
             "Proteins",
-            "StudyInformation",
+            "InputFiles",
         ]:
-            file_path = os.path.join(data_path, f"Payne_Organoids_{name}.txt")
+            file_path = os.path.join(data_path, filename)
         else:
             raise ValueError(f"Invalid argument '{name}' for name parameter with '{source}' as source.")
     else:
         raise ValueError(f"Invalid argument '{source}' for source parameter.")
 
     if source == "mm" and name == "AllQuantifiedProteinGroups":
-        # All the lines in the tsv for this table have an extra tab
-        # character at the end of every line except for the first one,
-        # which causes the headers to be read in offset by one column.
-        # This line addresses that.
-        df = pd.read_csv(file_path, sep="\t", usecols=range(136))
+        # Whenever MetaMorpheus generates this file, all the lines except the
+        # first one have an extra tab character at the end for some reason.
+        # This causes the headers to be read in offset by one column. This line
+        # addresses that.
+        df = pd.read_csv(file_path, sep="\t", usecols=usecols_rng, low_memory=False)
     else:
-        df = pd.read_csv(file_path, sep="\t")
+        df = pd.read_csv(file_path, sep="\t", low_memory=False)
 
     return df
 
