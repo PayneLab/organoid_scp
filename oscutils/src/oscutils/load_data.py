@@ -22,8 +22,12 @@ def load_protein_table(
         data.
     clean : bool, default True
         Whether to drop contaminated, no protein, QC, and blank samples from the table.
+        This is only relevant if you're loading the old run, because those samples
+        weren't included in the new runs.
     load_old: bool, default False
         Whether to load the data from the old run instead of the most recent one.
+        This is only for backwards compatibility and verification as we switched to
+        the data from the new runs; the old runs should not be used for any analysis.
 
     Returns
     -------
@@ -44,16 +48,12 @@ def load_protein_table(
             raise ValueError("'found' data not available from MetaMorpheus.")
 
         df = _load_original_table("mm", "AllQuantifiedProteinGroups", load_old=load_old) # Load protein table
-        ed = _load_original_table("mm", "ExperimentalDesign", load_old=load_old) # Load experimental design table
+        ed = _load_original_table("mm", "ExperimentalDesign", load_old=load_old) # Load experimental design table.
 
         df = df.set_index("Protein Accession") # Index by protein accession
         df = df[df.columns[df.columns.str.startswith("Intensity_")]] # Select just the protein abundance columns
 
         df.columns = df.columns.to_series().str.split("_", n=1, expand=True)[1].values # Cut off "Intensity_" from column names
-
-        # Zero-pad the sample numbers
-        cols_split = df.columns.to_series().str.rsplit("_", n=1, expand=True)
-        df.columns = cols_split[0] + "_" + cols_split[1].map("{:0>2}".format)
 
         # Standardize axis names
         df.columns.name = "sample"
@@ -63,32 +63,51 @@ def load_protein_table(
         transpose().\
         reset_index(drop=False)
 
-        # Cut the ".raw" off the end of the filenames, and generate a "sample" column for joining with protein table
+        # Cut the ".raw" off the end of the filenames in the experimental design table, and generate a 
+        # temporary "sample" column for joining with protein table. We'll then drop this "sample" column
+        # and create another one based off of the old experimental design table for consistency between
+        # loading versions. But we need this one to join in the case of the new tables.
         ed = ed.assign(
             FileName=ed["FileName"].str.rsplit(".", n=1, expand=True)[0],
-            sample=ed["Condition"] + "_" + ed["Biorep"].map("{:0>2}".format),
-        )
+            sample=ed["Condition"] + "_" + ed["Biorep"].astype(str),
+        )[["FileName", "sample"]]
 
-        # Mark the contaminated and no protein samples
-        ed = ed.assign(
-            contaminated=ed["FileName"].str.endswith("bad"),
-            no_protein=ed["FileName"].str.endswith("np"),
-        )
-
-        # Select only the needed columns
-        ed = ed[["sample", "FileName", "contaminated", "no_protein"]]
-
-        # Join into protein table
         df = ed.merge(
             right=df,
             on="sample",
             how="outer",
+        ).drop(columns="sample") # Don't need it anymore
+
+        # We're going to use the sample identifiers from the old experimental design table for consistency
+        old_ed = _load_original_table("mm", "ExperimentalDesign", load_old=True)
+
+        # Cut the ".raw" off the end of the filenames, and generate a "sample" column for identifying samples
+        # across the whole project
+        old_ed = old_ed.assign(
+            FileName=old_ed["FileName"].str.rsplit(".", n=1, expand=True)[0],
+            sample=old_ed["Condition"] + "_" + old_ed["Biorep"].map("{:0>2}".format),
+        )
+
+        # Mark the contaminated and no protein samples
+        old_ed = old_ed.assign(
+            contaminated=old_ed["FileName"].str.endswith("bad"),
+            no_protein=old_ed["FileName"].str.endswith("np"),
+        )
+
+        # Select only the needed columns
+        old_ed = old_ed[["sample", "FileName", "contaminated", "no_protein"]]
+
+        # Join old experimental design into the protein table
+        df = old_ed.merge(
+            right=df,
+            on="FileName",
+            how="right",
         )
 
     elif source == "pd":
 
         df = _load_original_table("pd", "Proteins", load_old=load_old) # Load protein table
-        inpf = _load_original_table("pd", "InputFiles", load_old=load_old) # Load study information table
+        inpf = _load_original_table("pd", "InputFiles", load_old=load_old) # Load input files table
         mm_ed = _load_original_table("mm", "ExperimentalDesign", load_old=True) # Load MetaMorpheus experimental design table so we can get same sample numbers. Note that we always load the old one because the new one doesn't have all of the sample numbers.
 
         df = df.set_index("Accession") # Index by protein accession
@@ -128,7 +147,7 @@ def load_protein_table(
         transpose().\
         reset_index(drop=False)
 
-        # Get just the file names from the full file paths in the study information table
+        # Get just the file names from the full file paths in the input files table
         inpf = inpf.assign(FileName=inpf["File Name"].str.rsplit(".", n=1, expand=True)[0].str.rsplit("\\", n=1, expand=True)[1])
         inpf = inpf[["File ID", "FileName"]]
 
@@ -147,7 +166,7 @@ def load_protein_table(
         # Select only the needed columns
         mm_ed = mm_ed[["sample", "FileName", "contaminated", "no_protein"]]
 
-        # Merge the study information table with the experimental design table from MetaMorpheus so we can get the same sample numbers
+        # Merge the input files table with the experimental design table from MetaMorpheus so we can get the same sample numbers
         # We join based off of the original file name, which had the well plate number and coordinates of the sample
         inpf = inpf.merge(
             right=mm_ed,
@@ -172,18 +191,16 @@ def load_protein_table(
     filename_split = df["FileName"].str.replace("_2_", "_").str.split("_", expand=True, regex=False)
     sample_rsplit = df["sample"].str.rsplit("_", n=1, expand=True)
 
-    # Since the blank and QC samples aren't "healthy" or "unhealthy", mark
-    # sample condition as NaN for them (see where this variable is used in the
-    # assign statement below).
+    # Since the blank and QC samples aren't "healthy" or "unhealthy", we're going to mark the
+    # sample condition as NaN for them. This variable is used to do so in the assign statement below.
     conditions_to_replace = filename_split[1][~filename_split[1].isin(["Healthy", "Unhealthy"])].unique()
 
     # Create metadata columns
     df = df.assign(
-        sample_type=filename_split[0].replace(to_replace="Psuedo-bulk", value="pbulk").replace("HFL1boost", "boost").replace("HFL1SC", "hfl1").str.lower(),
-        #sample_type=filename_split[0].replace(to_replace="Psuedo-bulk", value="pbulk").str.lower(), # TODO: replace above with this after check changes work
+        sample_type=filename_split[0].replace(to_replace="Psuedo-bulk", value="pbulk").str.lower(),
         sample_condition=filename_split[1].replace(to_replace=conditions_to_replace, value=np.nan).str.lower(),
         sample_num=sample_rsplit[1].astype(int),
-    ).drop(columns="FileName") # TODO: Keep this after refactor check
+    )
 
     # Move all the metadata columns to the beginning of the table
     df = df.\
@@ -194,8 +211,12 @@ def load_protein_table(
     if clean:
         df = df[~df["contaminated"] & ~df["no_protein"] & ~df["sample"].str.startswith("qc_") & ~df["sample"].str.startswith("blank_")]
         df = df.\
-        drop(columns=["contaminated", "no_protein"]).\
-        reset_index(drop=True)
+        drop(columns=["contaminated", "no_protein"])
+
+    # Sort to look nice
+    df = df.\
+    sort_values(by="sample").\
+    reset_index(drop=True)
 
     return df
 
@@ -226,6 +247,8 @@ def _load_original_table(
         Discoverer.
     load_old: bool, default False
         Whether to load the data from the old run instead of the most recent one.
+        This is only for backwards compatibility and verification as we switched to
+        the data from the new runs; the old runs should not be used for any analysis.
 
     Returns
     -------
@@ -306,6 +329,11 @@ def _get_proteins_found_count(
         "found" with the "mm" or "both" source options.
     clean : bool
         Whether to drop contaminated and no protein samples from the table.
+        Setting this parameter to False is only relevant if you're loading
+        the old runs, because those samples weren't included in the new runs.
+        However, the old runs should not be used for any analysis, so I didn't
+        even write an ability in this function to use them. So just always
+        leave this parameter as True, False won't do anything useful now.
 
     Returns
     -------

@@ -7,7 +7,7 @@ from .load_data import (
 
 def make_proteins_counts_plot(
     quant_or_found: str,
-    clean: bool,
+    clean: bool = True,
 ) -> alt.Chart:
     """
     Generate a plot showing the count of proteins found for each sample,
@@ -20,13 +20,19 @@ def make_proteins_counts_plot(
         Whether to use "proteins quantified" or just "proteins found" data.
         Currently only works with "quant", as "proteins found" data isn't
         available from MetaMorpheus.
-    clean : bool
+    clean : bool, default True
         Whether to drop contaminated and no protein samples from the table.
         If they are not dropped, bars are colored based on whether the
         sample was normal, contaminated, or no protein. If they are
         dropped, bars are colored based on the sample type (healthy or
         unhealthy HFL1 cell, healthy or unhealthy psuedo-bulk, healthy or
         unhealthy HFL1 boost, or blank).
+
+        Setting this parameter to False is only relevant if you're loading
+        the old runs, because those samples weren't included in the new runs.
+        However, the old runs should not be used for any analysis, so I didn't
+        even write an ability in this function to use them. So just always
+        leave this parameter as True, False won't do anything useful now.
 
     Returns
     -------
