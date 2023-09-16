@@ -2,6 +2,10 @@
 
 In collaboration with the Van Ry and Kelly labs at BYU.
 
+## Info about what to do next
+
+If you're new to this project, there's a Google Doc and Google Drive folder with detail information about where we are and what to do next. Talk with Sam if you don't have it.
+
 ## `oscutils` software package
 
 A lot analysis functions for this project are contained within a Python package included in the repository called `oscutils` (Organoid Single-Cell UTILitieS). To install and use it, follow the instructions in [`oscutils/README.md`](https://github.com/PayneLab/organoid_scp/blob/main/oscutils/README.md).
